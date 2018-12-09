@@ -107,11 +107,17 @@ namespace n2o
             Console.WriteLine("*** Read {0} bytes from socket. \n Data : {1}", content.Length, content);
 
             var tokens = content.Split(new [] {"\r\n"}, StringSplitOptions.None);
-            if (tokens.Length == 0) throw new Exception("Bad reques");
+            if (tokens.Length == 0) {
+                BadRequest(sock);
+                return;
+            }
 
             Console.WriteLine($"*** token={tokens[0]}");
             var header = tokens[0].Split(new [] {" "}, StringSplitOptions.None);
-            if (header.Length < 1) throw new Exception("Bad reques");
+            if (header.Length < 1) {
+                BadRequest(sock);
+                return;
+            }
 
             Console.WriteLine($"*** header={header[0]}, {header[1]}");
             var method = header[0];
@@ -119,9 +125,7 @@ namespace n2o
             var filePath = "static/html/" + path + ".html";
             Console.WriteLine($"*** filePath={filePath}");
             if (!File.Exists(filePath)) {
-                Console.WriteLine($"*** file absent. bye bye");
-                sock.Shutdown(SocketShutdown.Both);
-                sock.Close();
+                NotFound(sock);
                 return;
             }
 
@@ -140,6 +144,16 @@ namespace n2o
             sock.BeginSend(respBytes, 0, respBytes.Length, 0, Send, sock);
         }
 
+        private static void BadRequest(Socket sock) {
+            var resp = Encoding.UTF8.GetBytes("HTTP/1.1 400 Bad Request\r\n");
+            sock.BeginSend(resp, 0, resp.Length, 0, Send, sock);
+        }
+
+        private static void NotFound(Socket sock) {
+            var resp = Encoding.UTF8.GetBytes("HTTP/1.1 404 Not Found\r\n");
+            sock.BeginSend(resp, 0, resp.Length, 0, Send, sock);
+        }
+
         private static void Send(IAsyncResult ar) {
             try {
                 // Retrieve the socket from the state object.
@@ -147,7 +161,6 @@ namespace n2o
 
                 // Complete sending the data to the remote device.
                 var bytesSent = handler.EndSend(ar);
-                Console.WriteLine("*** Sent {0} bytes to client.", bytesSent);
 
                 handler.Shutdown(SocketShutdown.Both);
                 handler.Close();
