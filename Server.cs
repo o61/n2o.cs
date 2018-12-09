@@ -93,19 +93,12 @@ namespace n2o
 
             // Read data from the client socket. 
             var bytesRead = sock.EndReceive(ar);
-            
-            Console.WriteLine($"*** bytesRead={bytesRead}");
-
+            Console.WriteLine($"*** Received {bytesRead} bytes from socket.");
             if (bytesRead <= 0) return;
 
             // There  might be more data, so store the data received so far.
             state.Sb.Append(Encoding.UTF8.GetString(state.Buffer, 0, bytesRead));
-
-            // Check for end-of-file tag. If it is not there, read 
-            // more data.
             var content = state.Sb.ToString();
-            Console.WriteLine("*** Read {0} bytes from socket. \n Data : {1}", content.Length, content);
-
             var tokens = content.Split(new [] {"\r\n"}, StringSplitOptions.None);
             if (tokens.Length == 0) {
                 BadRequest(sock);
@@ -122,34 +115,34 @@ namespace n2o
             Console.WriteLine($"*** header={header[0]}, {header[1]}");
             var method = header[0];
             var path = header[1];
-            var filePath = "static/html/" + path + ".html";
-            Console.WriteLine($"*** filePath={filePath}");
+            var filePath = $"static/html{path}.html";
             if (!File.Exists(filePath)) {
                 NotFound(sock);
                 return;
             }
 
-            var fileContent = File.ReadAllText(filePath, Encoding.UTF8);
-            var r = new Resp {Status = 200, 
-                              Headers = new Dictionary<string, string> (){
-                                      {"Content-Type", "text/html"},
-                                      {"Content-Length", Encoding.UTF8.GetBytes(fileContent).Length.ToString()}
-                                  }
-                             };
-            var resp = "HTTP/1.1 200 OK\r\n" + String.Join("\r\n", r.Headers.Select(x => x.Key + ": " + x.Value)) + "\r\n\r\n" + fileContent;
-            Console.WriteLine($"*** resp={resp}");
-
-            var respBytes = Encoding.UTF8.GetBytes(resp);
+            var fileContent = File.ReadAllBytes(filePath);
+            var resp = new Resp { Status  = 200,
+                                  Headers = new Dictionary<string, string> () {
+                                            {"Content-Type",  "text/html"},
+                                            {"Content-Length", fileContent.Length.ToString()}}};
+            var respHeadersStr   = "HTTP/1.1 200 OK\r\n" + String.Join("\r\n", resp.Headers.Select(x => x.Key + ": " + x.Value)) + "\r\n\r\n";
+            var respHeadersBytes = Encoding.UTF8.GetBytes(respHeadersStr);
+            var respBytes = new byte[respHeadersBytes.Length + fileContent.Length];
+            Buffer.BlockCopy(respHeadersBytes, 0, respBytes, 0,                       respHeadersBytes.Length);
+            Buffer.BlockCopy(fileContent,      0, respBytes, respHeadersBytes.Length, fileContent.Length);
             // Echo the data back to the client.
             sock.BeginSend(respBytes, 0, respBytes.Length, 0, Send, sock);
         }
 
         private static void BadRequest(Socket sock) {
+            Console.WriteLine("*** BadRequest");
             var resp = Encoding.UTF8.GetBytes("HTTP/1.1 400 Bad Request\r\n");
             sock.BeginSend(resp, 0, resp.Length, 0, Send, sock);
         }
 
         private static void NotFound(Socket sock) {
+            Console.WriteLine("*** NotFound");
             var resp = Encoding.UTF8.GetBytes("HTTP/1.1 404 Not Found\r\n");
             sock.BeginSend(resp, 0, resp.Length, 0, Send, sock);
         }
