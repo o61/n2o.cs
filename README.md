@@ -1,6 +1,13 @@
-# n2o
-N2O: .NET Application Server
+# N2O for .NET
 
+## Build & Run
+Windows, Unix, Linux, Mac:
+
+```cmd
+..\n2o>dotnet run
+```
+
+## Notes
 * No 3rd-party libs, just base default library
 * Minimalism. Size of everything matters
 * https://github.com/atemerev/skynet
