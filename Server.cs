@@ -147,6 +147,15 @@ namespace n2o
             sock.BeginSend(resp, 0, resp.Length, 0, Send, sock);
         }
 
+        private static string RespCode(int status) {
+            switch (status) {
+                case 200: return "OK";
+                case 400: return "Bad Request";
+                case 404: return "Not Found";
+                default:  return "Internal Server Error";
+            }
+        }
+
         private static void Send(IAsyncResult ar) {
             try {
                 // Retrieve the socket from the state object.
