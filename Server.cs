@@ -18,14 +18,24 @@ namespace n2o
         public const int BufferSize = 2048;
         // Receive buffer.
         public byte[] Buffer = new byte[BufferSize];
-        // Received data string.
-        public StringBuilder Sb = new StringBuilder();
+    }
+
+    public class Req {
+        public readonly bool IsValid;
+        public readonly string Path;
+        public readonly Dictionary<string, string> Headers;
+        public Req() {}
+        public Req(string path, Dictionary<string, string> headers) {
+            IsValid = true;
+            Path = path;
+            Headers = headers;
+        }
     }
 
     public class Resp {
-        public int Status;
-        public Dictionary<string, string> Headers;
-        public byte[] Body;
+        public readonly HttpStatusCode Status;
+        public readonly Dictionary<string, string> Headers = new Dictionary<string, string>();
+        public readonly byte[] Body = new byte[] {};
     }
 
     public static class Server {
@@ -71,6 +81,22 @@ namespace n2o
             }
         }
 
+        private static Dictionary<string, string> ParseHeaders(IEnumerable<string> lns) {
+            return lns.ToDictionary(x => x.Split(": ")[0], x => x.Split(": ")[1]);
+        }
+
+        private static Req ParseReq(string req) {
+            var tokens = req.Split(new [] {"\r\n"}, StringSplitOptions.None);
+            if (tokens.Length == 0) return new Req();
+
+            var header = tokens[0].Split(new [] {" "}, StringSplitOptions.None);
+            if (header.Length < 1) return new Req();
+
+            var method = header[0];
+            var path = header[1];
+            return method == "GET" ? new Req(path, ParseHeaders(tokens.Skip(1))) : new Req();
+        }
+
         private static void Accept(IAsyncResult ar) {
             Console.WriteLine("*** Accept");
             // Signal the main thread to continue.
@@ -92,37 +118,35 @@ namespace n2o
             var sock = state.WorkSocket;
 
             // Read data from the client socket. 
-            var bytesRead = sock.EndReceive(ar);
-            Console.WriteLine($"*** Received {bytesRead} bytes from socket.");
-            if (bytesRead <= 0) return;
+            var reqLength = sock.EndReceive(ar);
+            Console.WriteLine($"*** Received {reqLength} bytes from socket.");
+            if (reqLength <= 0) {
+                BadRequest(sock);
+                return;
+            };
 
-            // There  might be more data, so store the data received so far.
-            state.Sb.Append(Encoding.UTF8.GetString(state.Buffer, 0, bytesRead));
-            var content = state.Sb.ToString();
-            var tokens = content.Split(new [] {"\r\n"}, StringSplitOptions.None);
-            if (tokens.Length == 0) {
+            var reqStr = Encoding.UTF8.GetString(state.Buffer, 0, reqLength);
+            var req = ParseReq(reqStr);
+
+            if (!req.IsValid) {
                 BadRequest(sock);
                 return;
             }
 
-            Console.WriteLine($"*** token={tokens[0]}");
-            var header = tokens[0].Split(new [] {" "}, StringSplitOptions.None);
-            if (header.Length < 1) {
-                BadRequest(sock);
-                return;
-            }
+            var reqPath = req.Path == "/"
+                          ? "/index"
+                          : req.Path.StartsWith("/ws")
+                            ? req.Path.Substring(3)
+                            : req.Path;
 
-            Console.WriteLine($"*** header={header[0]}, {header[1]}");
-            var method = header[0];
-            var path = header[1];
-            var filePath = $"static/html{path}.html";
+            var filePath = $"static/html{reqPath}.html";
             if (!File.Exists(filePath)) {
                 NotFound(sock);
                 return;
             }
 
             var fileContent = File.ReadAllBytes(filePath);
-            var resp = new Resp { Status  = 200,
+            var resp = new Resp { Status  = HttpStatusCode.OK,
                                   Headers = new Dictionary<string, string> () {
                                             {"Content-Type",  "text/html"},
                                             {"Content-Length", fileContent.Length.ToString()}}};
@@ -147,13 +171,18 @@ namespace n2o
             sock.BeginSend(resp, 0, resp.Length, 0, Send, sock);
         }
 
-        private static string RespCode(int status) {
-            switch (status) {
-                case 200: return "OK";
-                case 400: return "Bad Request";
-                case 404: return "Not Found";
-                default:  return "Internal Server Error";
-            }
+        private static void SendError(Socket sock, HttpStatusCode code) {
+            SendResp(sock, new Resp { Status = code });
+        }
+
+        private static void SendResp(Socket sock, Resp resp) {
+            var respHeadersStr   = $"HTTP/1.1 {resp.Status} {nameof(resp.Status)}\r\n" +
+                                   String.Join("\r\n", resp.Headers.Select(x => x.Key + ": " + x.Value)) + "\r\n\r\n";
+            var respHeadersBytes = Encoding.UTF8.GetBytes(respHeadersStr);
+            var respBytes = new byte[respHeadersBytes.Length + resp.Body.Length];
+            Buffer.BlockCopy(respHeadersBytes, 0, respBytes, 0,                       respHeadersBytes.Length);
+            Buffer.BlockCopy(resp.Body,        0, respBytes, respHeadersBytes.Length, resp.Body.Length);
+            sock.BeginSend(respBytes, 0, respBytes.Length, 0, Send, sock);
         }
 
         private static void Send(IAsyncResult ar) {
