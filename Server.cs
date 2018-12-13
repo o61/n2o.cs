@@ -147,12 +147,13 @@ namespace n2o
             }
 
             var reqPath = req.Path == "/"
-                          ? "/index"
+                          ? "/static/html/index.html"
                           : req.Path.StartsWith("/ws")
                             ? req.Path.Substring(3)
                             : req.Path;
 
-            var filePath = $"static/html{reqPath}.html";
+            var filePath = $"./{reqPath}";
+            Console.WriteLine($"*** filePath={filePath}");
             if (!File.Exists(filePath)) {
                 NotFound(sock);
                 return;
