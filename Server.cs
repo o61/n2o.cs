@@ -36,6 +36,16 @@ namespace n2o
         public readonly HttpStatusCode Status;
         public readonly Dictionary<string, string> Headers = new Dictionary<string, string>();
         public readonly byte[] Body = new byte[] {};
+
+        public Resp(HttpStatusCode status) {
+            Status = status;
+        }
+
+        public Resp(HttpStatusCode status, Dictionary<string, string> headers, byte[] body) {
+            Status = status;
+            Headers = headers;
+            Body = body;
+        }
     }
 
     public static class Server {
@@ -86,14 +96,17 @@ namespace n2o
         }
 
         private static Req ParseReq(string req) {
-            var tokens = req.Split(new [] {"\r\n"}, StringSplitOptions.None);
+            Console.WriteLine($"*** req={req}");
+            var tokens = req.Split(new [] {"\r\n"}, StringSplitOptions.RemoveEmptyEntries);
             if (tokens.Length == 0) return new Req();
 
-            var header = tokens[0].Split(new [] {" "}, StringSplitOptions.None);
+            var header = tokens[0].Split(new [] {" "}, StringSplitOptions.RemoveEmptyEntries);
             if (header.Length < 1) return new Req();
 
             var method = header[0];
             var path = header[1];
+            
+            var xs = tokens.Skip(1);
             return method == "GET" ? new Req(path, ParseHeaders(tokens.Skip(1))) : new Req();
         }
 
@@ -146,36 +159,28 @@ namespace n2o
             }
 
             var fileContent = File.ReadAllBytes(filePath);
-            var resp = new Resp { Status  = HttpStatusCode.OK,
-                                  Headers = new Dictionary<string, string> () {
-                                            {"Content-Type",  "text/html"},
-                                            {"Content-Length", fileContent.Length.ToString()}}};
-            var respHeadersStr   = "HTTP/1.1 200 OK\r\n" + String.Join("\r\n", resp.Headers.Select(x => x.Key + ": " + x.Value)) + "\r\n\r\n";
-            var respHeadersBytes = Encoding.UTF8.GetBytes(respHeadersStr);
-            var respBytes = new byte[respHeadersBytes.Length + fileContent.Length];
-            Buffer.BlockCopy(respHeadersBytes, 0, respBytes, 0,                       respHeadersBytes.Length);
-            Buffer.BlockCopy(fileContent,      0, respBytes, respHeadersBytes.Length, fileContent.Length);
-            // Echo the data back to the client.
-            sock.BeginSend(respBytes, 0, respBytes.Length, 0, Send, sock);
+            var resp = new Resp(HttpStatusCode.OK,
+                                new Dictionary<string, string> () {
+                                    {"Content-Type",  "text/html"},
+                                    {"Content-Length", fileContent.Length.ToString()}},
+                                fileContent);
+            SendResp(sock, resp);
         }
 
         private static void BadRequest(Socket sock) {
-            Console.WriteLine("*** BadRequest");
-            var resp = Encoding.UTF8.GetBytes("HTTP/1.1 400 Bad Request\r\n");
-            sock.BeginSend(resp, 0, resp.Length, 0, Send, sock);
+            SendError(sock, HttpStatusCode.BadRequest);
         }
 
         private static void NotFound(Socket sock) {
-            Console.WriteLine("*** NotFound");
-            var resp = Encoding.UTF8.GetBytes("HTTP/1.1 404 Not Found\r\n");
-            sock.BeginSend(resp, 0, resp.Length, 0, Send, sock);
+            SendError(sock, HttpStatusCode.NotFound);
         }
 
         private static void SendError(Socket sock, HttpStatusCode code) {
-            SendResp(sock, new Resp { Status = code });
+            SendResp(sock, new Resp(code));
         }
 
         private static void SendResp(Socket sock, Resp resp) {
+            Console.WriteLine("*** Send");
             var respHeadersStr   = $"HTTP/1.1 {resp.Status} {nameof(resp.Status)}\r\n" +
                                    String.Join("\r\n", resp.Headers.Select(x => x.Key + ": " + x.Value)) + "\r\n\r\n";
             var respHeadersBytes = Encoding.UTF8.GetBytes(respHeadersStr);
