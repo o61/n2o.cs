@@ -105,8 +105,6 @@ namespace n2o
 
             var method = header[0];
             var path = header[1];
-            
-            var xs = tokens.Skip(1);
             return method == "GET" ? new Req(path, ParseHeaders(tokens.Skip(1))) : new Req();
         }
 
@@ -122,6 +120,28 @@ namespace n2o
             // Create the state object.
             var state = new StateObject {WorkSocket = handler};
             handler.BeginReceive(state.Buffer, 0, StateObject.BufferSize, 0, Receive, state);
+        }
+
+        private static string Router(string path) {
+            switch (path) {
+                case "/": return "static/html/index.html";
+                default:  return path.Substring(path.StartsWith("/ws") ? 3 : 1);
+            }
+        }
+
+        private static bool NeedUpgrade(Req req) {
+            return req.Headers.Any(x => x.Key == "Upgrade" && x.Value.ToUpperCase() == "WEBSOCKET");
+        }
+
+        private static void Upgrade(Socket sock, Req req) {
+            CheckHandshake(sock, req);
+            var resp = new Resp(HttpStatusCode.SwitchingProtocols,
+                                new Dictionary<string, string> () {
+                                    {"Upgrade",  "websocket"},
+                                    {"Connection", "Upgrade"},
+                                    {"Sec-WebSocket-Accept", GetKey(req)}},
+                                new byte[]{});
+            SendResp(sock, resp);
         }
 
         private static void Receive(IAsyncResult ar) {
@@ -140,26 +160,25 @@ namespace n2o
 
             var reqStr = Encoding.UTF8.GetString(state.Buffer, 0, reqLength);
             var req = ParseReq(reqStr);
+            
+            if (NeedUpgrade(req)) {
+                Upgrade(sock, req);
+                return;
+            }
 
             if (!req.IsValid) {
                 BadRequest(sock);
                 return;
             }
 
-            var reqPath = req.Path == "/"
-                          ? "/static/html/index.html"
-                          : req.Path.StartsWith("/ws")
-                            ? req.Path.Substring(3)
-                            : req.Path;
-
-            var filePath = $"./{reqPath}";
-            Console.WriteLine($"*** filePath={filePath}");
-            if (!File.Exists(filePath)) {
+            var reqPath = Router(req.Path);
+            Console.WriteLine($"*** reqPath={reqPath}");
+            if (!File.Exists(reqPath)) {
                 NotFound(sock);
                 return;
             }
 
-            var fileContent = File.ReadAllBytes(filePath);
+            var fileContent = File.ReadAllBytes(reqPath);
             var resp = new Resp(HttpStatusCode.OK,
                                 new Dictionary<string, string> () {
                                     {"Content-Type",  "text/html"},
