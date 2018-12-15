@@ -13,6 +13,7 @@ Windows, Unix, Linux, Mac:
 * https://github.com/atemerev/skynet
 * Make future for each connection to emulate CML lib of SML
 * Avoid exceptions
+* https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
 
 
 ## Road map
