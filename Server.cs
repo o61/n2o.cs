@@ -14,6 +14,7 @@ namespace n2o
     // State object for reading client data asynchronously
     public class StateObject
     {
+        public bool IsWebSockets;
         // Client  socket.
         public Socket WorkSocket;
         // Size of receive buffer.
@@ -198,10 +199,12 @@ namespace n2o
             };
 
             var reqStr = Encoding.UTF8.GetString(state.Buffer, 0, reqLength);
+            Console.WriteLine($"*** reqStr={reqStr}");
             var req = ParseReq(reqStr);
             
             if (NeedUpgrade(req)) {
                 var wsResp = Upgrade(sock, req);
+                SendResp(sock, wsResp);
                 return;
             }
 
@@ -239,25 +242,35 @@ namespace n2o
 
         private static void SendResp(Socket sock, Resp resp) {
             Console.WriteLine("*** Send");
-            var respHeadersStr   = $"HTTP/1.1 {resp.Status} {nameof(resp.Status)}\r\n" +
+            var respHeadersStr   = $"HTTP/1.1 {(int)resp.Status} {nameof(resp.Status)}\r\n" +
                                    String.Join("\r\n", resp.Headers.Select(x => x.Key + ": " + x.Value)) + "\r\n\r\n";
+            Console.WriteLine(respHeadersStr);
             var respHeadersBytes = Encoding.UTF8.GetBytes(respHeadersStr);
             var respBytes = new byte[respHeadersBytes.Length + resp.Body.Length];
             Buffer.BlockCopy(respHeadersBytes, 0, respBytes, 0,                       respHeadersBytes.Length);
             Buffer.BlockCopy(resp.Body,        0, respBytes, respHeadersBytes.Length, resp.Body.Length);
-            sock.BeginSend(respBytes, 0, respBytes.Length, 0, Send, sock);
+            var state = new StateObject {WorkSocket = sock, IsWebSockets = resp.Status == HttpStatusCode.SwitchingProtocols};
+            sock.BeginSend(respBytes, 0, respBytes.Length, 0, Send, state);
         }
 
         private static void Send(IAsyncResult ar) {
             try {
                 // Retrieve the socket from the state object.
-                var handler = (Socket) ar.AsyncState;
+                var state = (StateObject) ar.AsyncState;
+                var sock = state.WorkSocket;
 
                 // Complete sending the data to the remote device.
-                var bytesSent = handler.EndSend(ar);
+                var bytesSent = sock.EndSend(ar);
+                Console.WriteLine($"*** bytesSent={bytesSent}, is websockets = {state.IsWebSockets}");
 
-                handler.Shutdown(SocketShutdown.Both);
-                handler.Close();
+                if (state.IsWebSockets && bytesSent > 0) {
+                    var newState = new StateObject {WorkSocket = sock};
+                    sock.BeginReceive(new byte[8], 0, 8, 0, Receive, state);
+                    return;
+                }
+
+                sock.Shutdown(SocketShutdown.Both);
+                sock.Close();
 
             } catch (Exception e) {
                 Console.WriteLine(e.ToString());
