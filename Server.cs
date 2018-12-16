@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
@@ -22,12 +24,18 @@ namespace n2o
 
     public class Req {
         public readonly bool IsValid;
+        public readonly HttpMethod Cmd;
         public readonly string Path;
+        public readonly string Vers;
         public readonly Dictionary<string, string> Headers;
+
         public Req() {}
-        public Req(string path, Dictionary<string, string> headers) {
+
+        public Req(string path, string vers, Dictionary<string, string> headers) {
             IsValid = true;
+            Cmd = HttpMethod.Get;
             Path = path;
+            Vers = vers;
             Headers = headers;
         }
     }
@@ -97,15 +105,16 @@ namespace n2o
 
         private static Req ParseReq(string req) {
             Console.WriteLine($"*** req={req}");
-            var tokens = req.Split(new [] {"\r\n"}, StringSplitOptions.RemoveEmptyEntries);
-            if (tokens.Length == 0) return new Req();
+            var headers = req.Split(new [] {"\r\n"}, StringSplitOptions.RemoveEmptyEntries);
+            if (headers.Length == 0) return new Req();
 
-            var header = tokens[0].Split(new [] {" "}, StringSplitOptions.RemoveEmptyEntries);
+            var header = headers[0].Split(new [] {" "}, StringSplitOptions.RemoveEmptyEntries);
             if (header.Length < 1) return new Req();
 
             var method = header[0];
             var path = header[1];
-            return method == "GET" ? new Req(path, ParseHeaders(tokens.Skip(1))) : new Req();
+            var vers = header[2];
+            return method == "GET" ? new Req(path, vers, ParseHeaders(headers.Skip(1))) : new Req();
         }
 
         private static void Accept(IAsyncResult ar) {
@@ -130,18 +139,48 @@ namespace n2o
         }
 
         private static bool NeedUpgrade(Req req) {
-            return req.Headers.Any(x => x.Key == "Upgrade" && x.Value.ToUpperCase() == "WEBSOCKET");
+            return req.Headers.Any(x => x.Key == "Upgrade" && x.Value.ToUpper() == "WEBSOCKET");
         }
 
-        private static void Upgrade(Socket sock, Req req) {
-            CheckHandshake(sock, req);
-            var resp = new Resp(HttpStatusCode.SwitchingProtocols,
+        private static string GetKey(Socket sock, Req req) {
+            if (!req.Headers.ContainsKey("Sec-WebSocket-Key")) {
+                BadRequest(sock, "No Sec-WebSocket-Key header");
+                return null;
+            }
+            var keyStr = req.Headers["Sec-WebSocket-Key"];
+            const string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+            var keyBytes = Encoding.UTF8.GetBytes(keyStr + magic);
+            using (var sha = new SHA1CryptoServiceProvider()) {
+                var keyEncrypted = sha.ComputeHash(keyBytes);
+                return Convert.ToBase64String(keyEncrypted);
+            }
+        }
+
+        private static void AssertHandshake(Socket sock, Req req) {
+            if (req.Cmd != HttpMethod.Get) {
+                BadRequest(sock, "Method must be GET");
+                return;
+            }
+
+            if (req.Vers != "HTTP/1.1") {
+                BadRequest(sock, "HTTP version must be 1.1");
+                return;
+            }
+
+            if (!req.Headers.ContainsKey("Sec-WebSocket-Version") || req.Headers["Sec-WebSocket-Version"] != "13") {
+                BadRequest(sock, "WebSocket version must be 13");
+                return;
+            }
+        }
+
+        private static Resp Upgrade(Socket sock, Req req) {
+            AssertHandshake(sock, req);
+            return new Resp(HttpStatusCode.SwitchingProtocols,
                                 new Dictionary<string, string> () {
                                     {"Upgrade",  "websocket"},
                                     {"Connection", "Upgrade"},
-                                    {"Sec-WebSocket-Accept", GetKey(req)}},
+                                    {"Sec-WebSocket-Accept", GetKey(sock, req)}},
                                 new byte[]{});
-            SendResp(sock, resp);
         }
 
         private static void Receive(IAsyncResult ar) {
@@ -162,7 +201,7 @@ namespace n2o
             var req = ParseReq(reqStr);
             
             if (NeedUpgrade(req)) {
-                Upgrade(sock, req);
+                var wsResp = Upgrade(sock, req);
                 return;
             }
 
@@ -172,7 +211,6 @@ namespace n2o
             }
 
             var reqPath = Router(req.Path);
-            Console.WriteLine($"*** reqPath={reqPath}");
             if (!File.Exists(reqPath)) {
                 NotFound(sock);
                 return;
@@ -187,7 +225,7 @@ namespace n2o
             SendResp(sock, resp);
         }
 
-        private static void BadRequest(Socket sock) {
+        private static void BadRequest(Socket sock, string body = "") {
             SendError(sock, HttpStatusCode.BadRequest);
         }
 
@@ -195,8 +233,8 @@ namespace n2o
             SendError(sock, HttpStatusCode.NotFound);
         }
 
-        private static void SendError(Socket sock, HttpStatusCode code) {
-            SendResp(sock, new Resp(code));
+        private static void SendError(Socket sock, HttpStatusCode code, string body = "") {
+            SendResp(sock, new Resp(code, new Dictionary<string, string>(), Encoding.UTF8.GetBytes(body)));
         }
 
         private static void SendResp(Socket sock, Resp resp) {
