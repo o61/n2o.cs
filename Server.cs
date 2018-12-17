@@ -92,7 +92,7 @@ namespace n2o
                 AllDone.Reset();
 
                 // Start an asynchronous socket to listen for connections.
-                Console.WriteLine("*** n2o server is waiting for a connection...");
+                Console.WriteLine("waiting for a connection...");
                 serverSock.BeginAccept(Accept, serverSock);
 
                 // Wait until a connection is made before continuing.
@@ -105,7 +105,6 @@ namespace n2o
         }
 
         private static Req ParseReq(string req) {
-            Console.WriteLine($"*** req={req}");
             var headers = req.Split(new [] {"\r\n"}, StringSplitOptions.RemoveEmptyEntries);
             if (headers.Length == 0) return new Req();
 
@@ -119,7 +118,7 @@ namespace n2o
         }
 
         private static void Accept(IAsyncResult ar) {
-            Console.WriteLine("*** Accept");
+            Console.WriteLine("accept");
             // Signal the main thread to continue.
             AllDone.Set();
 
@@ -192,14 +191,12 @@ namespace n2o
 
             // Read data from the client socket. 
             var reqLength = sock.EndReceive(ar);
-            Console.WriteLine($"*** Received {reqLength} bytes from socket.");
             if (reqLength <= 0) {
                 BadRequest(sock);
                 return;
             };
 
             var reqStr = Encoding.UTF8.GetString(state.Buffer, 0, reqLength);
-            Console.WriteLine($"*** reqStr={reqStr}");
             var req = ParseReq(reqStr);
             
             if (NeedUpgrade(req)) {
@@ -214,6 +211,7 @@ namespace n2o
             }
 
             var reqPath = Router(req.Path);
+            Console.WriteLine($"reqPath = {reqPath}");
             if (!File.Exists(reqPath)) {
                 NotFound(sock);
                 return;
@@ -241,10 +239,8 @@ namespace n2o
         }
 
         private static void SendResp(Socket sock, Resp resp) {
-            Console.WriteLine("*** Send");
             var respHeadersStr   = $"HTTP/1.1 {(int)resp.Status} {nameof(resp.Status)}\r\n" +
                                    String.Join("\r\n", resp.Headers.Select(x => x.Key + ": " + x.Value)) + "\r\n\r\n";
-            Console.WriteLine(respHeadersStr);
             var respHeadersBytes = Encoding.UTF8.GetBytes(respHeadersStr);
             var respBytes = new byte[respHeadersBytes.Length + resp.Body.Length];
             Buffer.BlockCopy(respHeadersBytes, 0, respBytes, 0,                       respHeadersBytes.Length);
@@ -261,11 +257,10 @@ namespace n2o
 
                 // Complete sending the data to the remote device.
                 var bytesSent = sock.EndSend(ar);
-                Console.WriteLine($"*** bytesSent={bytesSent}, is websockets = {state.IsWebSockets}");
+                Console.WriteLine($"bytesSent={bytesSent}, is websockets = {state.IsWebSockets}");
 
                 if (state.IsWebSockets && bytesSent > 0) {
-                    var newState = new StateObject {WorkSocket = sock};
-                    sock.BeginReceive(new byte[8], 0, 8, 0, Receive, state);
+                    WebSocket.Serve(sock);
                     return;
                 }
 
