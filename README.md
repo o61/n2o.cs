@@ -1,4 +1,4 @@
-# N2O for .NET
+# N2O.NET
 
 ## Build & Run
 Windows, Unix, Linux, Mac:
