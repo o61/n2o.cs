@@ -20,7 +20,7 @@ Windows, Unix, Linux, Mac:
 
 
 ## Road map
-[x] https://github.com/o1/n2o/commits/master/src/server.sml
-[ ] https://github.com/o1/n2o/blob/master/src/websocket.sml
-[ ] n2o
-[ ] nitro
+- [x] https://github.com/o1/n2o/commits/master/src/server.sml
+- [ ] https://github.com/o1/n2o/blob/master/src/websocket.sml
+- [ ] n2o
+- [ ] nitro
