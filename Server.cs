@@ -92,7 +92,7 @@ namespace n2o
                 AllDone.Reset();
 
                 // Start an asynchronous socket to listen for connections.
-                Console.WriteLine("waiting for a connection...");
+                Console.WriteLine("_____connection_____");
                 serverSock.BeginAccept(Accept, serverSock);
 
                 // Wait until a connection is made before continuing.
@@ -118,7 +118,6 @@ namespace n2o
         }
 
         private static void Accept(IAsyncResult ar) {
-            Console.WriteLine("accept");
             // Signal the main thread to continue.
             AllDone.Set();
 
