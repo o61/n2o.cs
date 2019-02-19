@@ -15,7 +15,6 @@ Windows, Unix, Linux, Mac:
 * Avoid exceptions
 * https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
 * https://hackernoon.com/implementing-a-websocket-server-with-node-js-d9b78ec5ffa8
-* https://github.com/pusher/websockets-from-scratch-tutorial/blob/master/websocket_connection.rb
 * https://docs.microsoft.com/en-us/dotnet/api/system.net.sockets.socket?view=netframework-4.7.2
 * https://docs.microsoft.com/en-us/dotnet/api/system.net.websockets.websocket?view=netframework-4.7.2
 
