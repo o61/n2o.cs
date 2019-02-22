@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace n2o
+namespace N2O
 {
     public class Program {
         public static int Main(String[] args) {

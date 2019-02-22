@@ -9,84 +9,76 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
-namespace n2o
+namespace N2O
 {
-    public enum Opcode {
-        ContinuationFrame,
-        TextFrame,
-        BinaryFrame,
-        NonControlFrame3,
-        NonControlFrame4,
-        NonControlFrame5,
-        NonControlFrame6,
-        NonControlFrame7,
-        ConnectionClose,
-        Ping,
-        Pong,
-        ControlFrameB,
-        ControlFrameC,
-        ControlFrameD,
-        ControlFrameE,
-        ControlFrameF
+    public enum Opcode : byte
+    {
+        Continuation,
+        Text,
+        Binary,
+        Close = 8,
+        Ping = 9,
+        Pong = 10,
     }
-    
-    public static class WebSocket {
-        public static void Serve(Socket sock) {
+
+    public static class WebSocket
+    {
+        public static void Serve(Socket sock)
+        {
             Receive(sock);
         }
 
-        public static void Receive(Socket sock) {
+        public static void Receive(Socket sock)
+        {
             Parse(sock);
         }
 
-        public static void Parse(Socket sock) {
+        public static void Parse(Socket sock)
+        {
             var b0 = new byte[1];
             sock.Receive(b0);
-            var isFinalFrame = (b0[0] >> 0) & 1;
-            var rsv1         = (b0[0] >> 1) & 1;
-            var rsv2         = (b0[0] >> 2) & 1;
-            var rsv3         = (b0[0] >> 3) & 1;
-            var opcode       = (b0[0] >> 4) & 15;
+
+            var isFinalFrame = (b0[0] & 128) != 0;
+            var reservedBits = (b0[0] & 112);
+            var opcode = (Opcode)(b0[0] & 15);
+
             Console.WriteLine($"*** isFinalFrame={isFinalFrame} opcode={opcode}");
 
             var b1 = new byte[1];
             sock.Receive(b1);
 
-            var isMasked       = (b1[0] >> 0) & 1;
-            long payloadLength = (b1[0] >> 0) & 127;
+            var isMasked = (b1[0] & 128) != 0;
+            var payloadLength = (b1[0] & 127);
             Console.WriteLine($"*** isMasked={isMasked} payloadLength={payloadLength}");
 
             if (payloadLength == 126) {
                 var payloadLengthBytes = new byte[2];
                 sock.Receive(payloadLengthBytes);
-                payloadLength = BitConverter.ToInt64(payloadLengthBytes, 0);
+                payloadLength = ToLittleEndianInt(payloadLengthBytes);
             } else if (payloadLength == 127) {
                 var payloadLengthBytes = new byte[8];
                 sock.Receive(payloadLengthBytes);
-                payloadLength = BitConverter.ToInt64(payloadLengthBytes, 0);
+                payloadLength = ToLittleEndianInt(payloadLengthBytes);
             }
             Console.WriteLine($"*** payloadLength={payloadLength}");
 
-            var mask = new byte[4];
-            var data = new byte[payloadLength];
+            var maskBytes = new byte[4];
+            var payload = new byte[payloadLength];
 
-            if (isMasked == 1) {
-                sock.Receive(mask);
-                sock.Receive(data);
-                for (int i = 0; i < data.Length; i++) {
-                    data[i] = Convert.ToByte(data[i] ^ mask[i % 4]);
-                }
-            } else {
-                sock.Receive(data);
-            }
+            if (isMasked) sock.Receive(maskBytes);
 
-            var dataStr = Encoding.UTF8.GetString(data);
-            Console.WriteLine($"*** {data.Length} data={dataStr}");
+            sock.Receive(payload);
 
-            Send(sock, b0, b1, payloadLength, data);
+            if (isMasked) payload = payload.Select((x, i) => (byte)(x ^ maskBytes[i % 4])).ToArray();
+
+            var payloadStr = new UTF8Encoding(false, true).GetString(payload);
+            Console.WriteLine($"*** {payload.Length} data={payloadStr}");
+
+            Send(sock, b0, b1, payloadLength, payload);
         }
         
-        public static void Send(Socket sock, byte[] b0, byte[] b1, long payloadLength, byte[] data) {
+        public static void Send(Socket sock, byte[] b0, byte[] b1, long payloadLength, byte[] data)
+        {
             sock.Send(b0);
             sock.Send(b1);
             if (payloadLength <= 125) {
@@ -101,6 +93,17 @@ namespace n2o
                 sock.Send(lengthBytes);
                 sock.Send(data);
             }
+        }
+
+        private static int ToLittleEndianInt(byte[] source)
+        {
+            if (BitConverter.IsLittleEndian) Array.Reverse(source);
+
+            if (source.Length == 2) return BitConverter.ToUInt16(source, 0);
+
+            if (source.Length == 8) return (int)BitConverter.ToUInt64(source, 0);
+
+            throw new ArgumentException("Unsupported size");
         }
     }
 }

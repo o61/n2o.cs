@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
-namespace n2o
+namespace N2O
 {
     // State object for reading client data asynchronously
     public class StateObject
