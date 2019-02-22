@@ -25,15 +25,10 @@ namespace N2O
     {
         public static void Serve(Socket sock)
         {
-            Receive(sock);
+            while(true) Receive(sock);
         }
 
         public static void Receive(Socket sock)
-        {
-            Parse(sock);
-        }
-
-        public static void Parse(Socket sock)
         {
             var b0 = new byte[1];
             sock.Receive(b0);
