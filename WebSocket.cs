@@ -74,25 +74,38 @@ namespace N2O
             var payloadStr = new UTF8Encoding(false, true).GetString(payload);
             Console.WriteLine($"*** {payload.Length} data={payloadStr}");
 
-            Send(sock, b0, b1, payloadLength, payload);
+            Send(sock, payloadStr);
         }
-        
-        public static void Send(Socket sock, byte[] b0, byte[] b1, long payloadLength, byte[] data)
+
+        public static void Send(Socket sock, string message)
         {
-            sock.Send(b0);
-            sock.Send(b1);
-            if (payloadLength <= 125) {
-                sock.Send(data);
-            } else if (payloadLength == 126) {
-                var length = Convert.ToInt32(payloadLength);
-                var lengthBytes = BitConverter.GetBytes(length);
-                sock.Send(lengthBytes);
-                sock.Send(data);
-            } else if (payloadLength == 127) {
-                var lengthBytes = BitConverter.GetBytes(payloadLength);
-                sock.Send(lengthBytes);
-                sock.Send(data);
+            var messageBytes = Encoding.UTF8.GetBytes(message);
+            var messageFrame = FrameData(messageBytes, Opcode.Text);
+            sock.Send(messageFrame);
+        }
+
+        public static byte[] FrameData(byte[] payload, Opcode opcode)
+        {
+            var memoryStream = new MemoryStream();
+            byte op = (byte)((byte)opcode + 128);
+
+            memoryStream.WriteByte(op);
+
+            if (payload.Length > UInt16.MaxValue) {
+                memoryStream.WriteByte(127);
+                var lengthBytes = ToBigEndianBytes<ulong>(payload.Length);
+                memoryStream.Write(lengthBytes, 0, lengthBytes.Length);
+            } else if (payload.Length > 125) {
+                memoryStream.WriteByte(126);
+                var lengthBytes = ToBigEndianBytes<ushort>(payload.Length);
+                memoryStream.Write(lengthBytes, 0, lengthBytes.Length);
+            } else {
+                memoryStream.WriteByte((byte)payload.Length);
             }
+
+            memoryStream.Write(payload, 0, payload.Length);
+
+            return memoryStream.ToArray();
         }
 
         private static int ToLittleEndianInt(byte[] source)
@@ -104,6 +117,25 @@ namespace N2O
             if (source.Length == 8) return (int)BitConverter.ToUInt64(source, 0);
 
             throw new ArgumentException("Unsupported size");
+        }
+
+        public static byte[] ToBigEndianBytes<T>(int source)
+        {
+            byte[] bytes;
+
+            var type = typeof(T);
+            if (type == typeof(ushort))
+                bytes = BitConverter.GetBytes((ushort)source);
+            else if (type == typeof(ulong))
+                bytes = BitConverter.GetBytes((ulong)source);
+            else if (type == typeof(int))
+                bytes = BitConverter.GetBytes(source);
+            else
+                throw new InvalidCastException("Cannot be cast to T");
+
+            if (BitConverter.IsLittleEndian)
+                Array.Reverse(bytes);
+            return bytes;
         }
     }
 }

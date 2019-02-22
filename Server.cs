@@ -248,7 +248,8 @@ namespace N2O
             sock.BeginSend(respBytes, 0, respBytes.Length, 0, Send, state);
         }
 
-        private static void Send(IAsyncResult ar) {
+        private static void Send(IAsyncResult ar)
+        {
             try {
                 // Retrieve the socket from the state object.
                 var state = (StateObject) ar.AsyncState;
@@ -265,7 +266,6 @@ namespace N2O
 
                 sock.Shutdown(SocketShutdown.Both);
                 sock.Close();
-
             } catch (Exception e) {
                 Console.WriteLine(e.ToString());
             }
