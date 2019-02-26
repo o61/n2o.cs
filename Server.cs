@@ -261,9 +261,9 @@ namespace N2O
 
                 if (state.IsWebSockets && bytesSent > 0) {
                     WebSocket.Serve(sock);
-                    return;
                 }
 
+                Console.WriteLine("shut down & close socket");
                 sock.Shutdown(SocketShutdown.Both);
                 sock.Close();
             } catch (Exception e) {

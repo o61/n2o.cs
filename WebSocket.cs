@@ -25,10 +25,13 @@ namespace N2O
     {
         public static void Serve(Socket sock)
         {
-            while(true) Receive(sock);
+            var isNeedToCloseConnection = false;
+            while(!isNeedToCloseConnection) {
+                isNeedToCloseConnection = Receive(sock);
+            }
         }
 
-        public static void Receive(Socket sock)
+        public static bool Receive(Socket sock)
         {
             var b0 = new byte[1];
             sock.Receive(b0);
@@ -38,6 +41,7 @@ namespace N2O
             var opcode = (Opcode)(b0[0] & 15);
 
             Console.WriteLine($"*** isFinalFrame={isFinalFrame} opcode={opcode}");
+            if (opcode == Opcode.Close) return true;
 
             var b1 = new byte[1];
             sock.Receive(b1);
@@ -70,6 +74,7 @@ namespace N2O
             Console.WriteLine($"*** {payload.Length} data={payloadStr}");
 
             Send(sock, payloadStr);
+            return false;
         }
 
         public static void Send(Socket sock, string message)
